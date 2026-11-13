@@ -51,8 +51,15 @@ def now_local():
 
 
 def clock_skew_seconds():
-    """اختلاف ساعت سیستم با ساعت تهران به ثانیه (مثبت یعنی ساعت سیستم جلوتر است)."""
+    """
+    اختلاف «ساعت UTC داخلی سیستم» با ساعت تهران (ثانیه). به‌صورت پیش‌فرض خاموش است و None برمی‌گرداند،
+    چون اگر منطقه‌ی زمانی ویندوز با تهران فرق کند ولی ساعت نمایش‌داده‌شده درست باشد، هشدار کاذب می‌دهد.
+    مرجع پروژه ساعت نمایش‌داده‌شده‌ی ویندوز است؛ صحت آن در health_check با زمان خود بورس سنجیده می‌شود.
+    برای روشن‌کردن: در config.py بنویس CHECK_CLOCK_SKEW = True
+    """
     try:
+        if not cfg("CHECK_CLOCK_SKEW", False):
+            return None
         tehran = datetime.now(TEHRAN).replace(tzinfo=None)
         return (datetime.now() - tehran).total_seconds()
     except Exception:

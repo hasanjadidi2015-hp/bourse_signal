@@ -66,11 +66,9 @@ def sec_environment(con):
         problem("یکپارچگی دیتابیس ok نیست: %s" % chk)
     skew = bc.clock_skew_seconds()
     if skew is None:
-        say("  ساعت سیستم: قابل مقایسه با تهران نبود")
+        say("  ساعت: مرجع، ساعت نمایش‌داده‌شده‌ی ویندوز است (مقایسه با بورس در بخش «ساعت» پایین‌تر)")
     else:
-        say("  اختلاف ساعت سیستم با تهران: %.0f ثانیه" % skew)
-        if abs(skew) > 120:
-            problem("ساعت سیستم با ساعت تهران اختلاف دارد (%.0f ثانیه)" % skew)
+        say("  اختلاف ساعت UTC داخلی سیستم با تهران: %.0f ثانیه" % skew)
 
 
 def sec_tables(con):
@@ -217,6 +215,39 @@ def sec_events(con, days):
             say("    %s %s %s" % r)
 
 
+def sec_clock(con, days):
+    """ساعت ثبت ما را با زمان آخرین به‌روزرسانی خود بورس (h_even) مقایسه می‌کند."""
+    if "h_even" not in bc.table_columns(con, "price"):
+        say("  ستون h_even هنوز نیست؛ بعد از اولین روز با collector نسخه‌ی ۲ این بخش پر می‌شود.")
+        return
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d 00:00:00")
+    df = pd.read_sql_query(
+        "SELECT ts, symbol, d_even, h_even FROM price "
+        "WHERE ts >= ? AND h_even IS NOT NULL AND d_even IS NOT NULL", con,
+        params=(since,), parse_dates=["ts"])
+    if df.empty:
+        say("  هنوز ردیفی با h_even ثبت نشده است.")
+        return
+    hm = df.ts.dt.strftime("%H:%M")
+    day_int = df.ts.dt.strftime("%Y%m%d").astype(int)
+    df = df[(df.d_even == day_int) & (hm >= "09:05") & (hm <= "12:25")].copy()
+    if df.empty:
+        say("  در ساعت معاملات (۹:۰۵ تا ۱۲:۲۵) ردیفی برای مقایسه نیست.")
+        return
+    h = df.h_even.astype(int)
+    stamp = (df.ts.dt.strftime("%Y-%m-%d") + " " + (h // 10000).astype(str).str.zfill(2) + ":"
+             + ((h // 100) % 100).astype(str).str.zfill(2) + ":" + (h % 100).astype(str).str.zfill(2))
+    lag = (df.ts - pd.to_datetime(stamp, errors="coerce")).dt.total_seconds()
+    say("  ساعت ثبت ما منهای زمان آخرین به‌روزرسانی بورس (ثانیه):")
+    for name, g in lag.groupby(df.symbol):
+        g = g.dropna()
+        if len(g):
+            say("    %-6s: میانه %7.0f | ۱۰٪ %7.0f | ۹۰٪ %7.0f | تعداد %d" % (
+                name, g.median(), g.quantile(0.1), g.quantile(0.9), len(g)))
+    say("  تفسیر: برای نماد پرمعامله (اهرم) میانه باید نزدیک صفر تا چند دقیقه باشد. "
+        "اگر حدود ۱۸۰۰ یا ۳۶۰۰ بود، ساعت ویندوز نسبت به بورس اختلاف دارد.")
+
+
 def sec_backups():
     files = bc.list_backups(DB_PATH)
     if not files:
@@ -257,6 +288,7 @@ def main():
         section("وضعیت روزانه‌ی هر نماد", sec_daily, con, args.days)
         section("عملکرد collector", sec_collector, con, args.days)
         section("رویدادها", sec_events, con, args.days)
+        section("ساعت (مقایسه با بورس)", sec_clock, con, args.days)
         section("نسخه‌های پشتیبان", sec_backups)
         section("فایل‌های پروژه", sec_files)
     finally:

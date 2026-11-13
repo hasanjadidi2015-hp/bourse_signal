@@ -7,3 +7,9 @@ __pycache__/
 .env
 .venv/
 newenv/
+*.csv
+*.json
+model_report.txt
+daily/
+locks/
+old_tests/
